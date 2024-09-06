@@ -1,4 +1,7 @@
-use expense_tracker::{map_category, Category, Expense};
+use expense_tracker::{
+    convert_from_system_time, get_month_from_date_string, map_category, Category, Expense,
+};
+use std::time::SystemTime;
 
 #[cfg(test)]
 mod tests {
@@ -31,5 +34,19 @@ mod tests {
         // Should be other
         let category = "should be other";
         assert_eq!(map_category(category), Category::Other);
+    }
+
+    #[test]
+    fn test_get_month_from_date_string() {
+        let month = get_month_from_date_string("2024-09-05 16:06:22");
+
+        assert_eq!(month, 9);
+    }
+
+    #[test]
+    fn test_convert_from_system_time() {
+        let time = convert_from_system_time(SystemTime::now());
+        assert!(time.contains("2024"));
+        assert!(time.contains("09"));
     }
 }

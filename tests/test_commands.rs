@@ -50,27 +50,35 @@ mod test {
     }
 
     #[test]
-    fn test_view_command() {
+    fn test_list_command() {
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command.arg("list").arg("-c").arg("food").assert().success();
+
         let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
-        cmd.arg("view").assert().success();
+        cmd.arg("list").assert().success();
+
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command.arg("list").arg("arg").assert().failure();
     }
 
     #[test]
     fn test_summary_command() {
         let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
-        cmd.arg("summary").assert().success();
-    }
+        cmd.arg("summary").arg("-c").arg("food").assert().success();
 
-    #[test]
-    fn test_category_command() {
-        let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
-        cmd.arg("category").assert().success();
-    }
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command.arg("summary").arg("-m").arg("9").assert().success();
 
-    #[test]
-    fn test_budget_command() {
-        let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
-        cmd.arg("budget").assert().success();
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command
+            .arg("summary")
+            .arg("-a")
+            .arg("80")
+            .assert()
+            .success();
+
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command.arg("summary").assert().success();
     }
 
     #[test]
@@ -81,5 +89,14 @@ mod test {
             .arg("filename")
             .assert()
             .success();
+    }
+
+    #[test]
+    fn test_budget_command() {
+        let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
+        cmd.arg("budget").arg("-b").arg("30.0").assert().success();
+
+        let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
+        cmd.arg("budget").arg("arg").assert().failure();
     }
 }
