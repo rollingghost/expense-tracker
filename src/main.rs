@@ -89,7 +89,8 @@ enum Commands {
     },
 }
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = ExpenseTracker::parse();
     let mut all_expenses = load_expenses().unwrap_or_else(|_| vec![]);
     let budget = get_budget();
