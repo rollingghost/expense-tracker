@@ -1,9 +1,12 @@
+pub mod pdb; // Postgres interactions
+pub mod surrealdb; // SurrealDB
+
 use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
 use comfy_table::Table;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
-use std::io::{self, Write};
+use std::io::{self, stdin, stdout, Write};
 use std::time::SystemTime;
 
 /// Represents an expense in the expense tracker.
@@ -339,4 +342,37 @@ pub fn get_budget() -> f64 {
     let budget: f64 = serde_json::from_str(&budget).expect("Unable to parse the budget");
 
     budget
+}
+
+/// Clear all expense
+///
+/// # Arguments
+/// No arguments
+///
+/// # Returns
+///
+/// Result `Ok` if the expenses were successfully cleared and `Err` std::error::Error on error
+pub fn clear_all_expenses() -> Result<(), Box<dyn std::error::Error>> {
+    let mut confirm_clear = "n".to_string();
+    print!("\n >> << Are you sure you want to clear all expenses? [y][N] << >> ");
+    stdout()
+        .flush()
+        .expect("Hard to display something here. Try agin.");
+    stdin()
+        .read_line(&mut confirm_clear)
+        .expect("Could not read you terminal. Try again");
+
+    match confirm_clear.as_str() {
+        "y" | "Y" => {
+            let blank_expenses = [];
+            save_expenses(&blank_expenses)?;
+        }
+
+        "n" | "N" => println!("User quit!"),
+
+        _ => {
+            println!("\n\tMaybe that is not the command you wanted to run: Try [y] or [N]\n");
+        }
+    }
+    Ok(())
 }

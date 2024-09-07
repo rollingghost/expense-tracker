@@ -1,6 +1,6 @@
 use clap::{Parser, Subcommand};
 use expense_tracker::{
-    convert_from_system_time, delete_expense, export_expenses, get_budget,
+    clear_all_expenses, convert_from_system_time, delete_expense, export_expenses, get_budget,
     get_month_from_date_string, load_expenses, map_category, prettify_expense_display,
     prettify_expense_not_found, save_expenses, search_expense_by_id, set_budget, Expense,
 };
@@ -25,6 +25,10 @@ enum Commands {
 
         #[arg(short, long, default_value = "other")]
         category: String,
+    },
+    Clear {
+        #[arg(short, long, default_value = "all")]
+        clear: String,
     },
     #[command(about = "Update an expense.")]
     Update {
@@ -101,8 +105,6 @@ fn main() {
             all_expenses.push(new_expense.clone());
             save_expenses(&all_expenses).unwrap();
             prettify_expense_display(&all_expenses);
-
-            print!("{:?}", new_expense);
         }
         Commands::Update {
             id,
@@ -172,7 +174,11 @@ fn main() {
                     && (added_at == "now" || expense.added_at == added_at)
             });
 
-            prettify_expense_display(&filtered_expenses);
+            if filtered_expenses.is_empty() {
+                prettify_expense_not_found();
+            } else {
+                prettify_expense_display(&filtered_expenses);
+            }
         }
         Commands::Summary {
             category,
@@ -221,5 +227,22 @@ fn main() {
         }
         Commands::Export { file } => export_expenses(&file, &all_expenses).unwrap(),
         Commands::Budget { budget } => set_budget(budget),
+        Commands::Clear { clear } => {
+            if clear == "all" {
+                match clear_all_expenses() {
+                    Ok(()) => println!("All clear."),
+                    Err(e) => println!("{}", e),
+                }
+            } else {
+                print!("Maybe that is no the argument you wanted.");
+                println!("Try this: ");
+                println!(
+                    r#"
+                        -c all: To clear all expenses
+                        -c <month>: To clear for certain month
+                    "#
+                )
+            }
+        }
     }
 }

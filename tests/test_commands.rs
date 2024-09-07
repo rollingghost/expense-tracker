@@ -99,4 +99,13 @@ mod test {
         let mut cmd = Command::cargo_bin("expense-tracker").unwrap();
         cmd.arg("budget").arg("arg").assert().failure();
     }
+
+    #[test]
+    fn test_clear_command() {
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command.arg("clear").assert().success();
+
+        let mut command = Command::cargo_bin("expense-tracker").unwrap();
+        command.arg("clear").arg("arg").assert().failure();
+    }
 }
