@@ -28,7 +28,7 @@ struct Record {
     id: Thing,
 }
 
-async fn main_surreal() -> surrealdb::Result<()> {
+pub async fn main_surreal() -> surrealdb::Result<()> {
     // Connect to the server
     let db = Surreal::new::<Ws>("127.0.0.1:8000").await?;
 
