@@ -1,5 +1,4 @@
 pub mod expense_cli;
-pub mod post_database; // Postgres interactions
 pub mod surreal_db; // SurrealDB
 
 use clap::{Parser, Subcommand};
@@ -98,7 +97,7 @@ enum Commands {
 ///
 /// # Returns
 /// ()
-pub fn main_expense_cli() {
+pub async fn main_expense_cli() {
     let args = ExpenseTracker::parse();
     let mut all_expenses = load_expenses().unwrap_or_else(|_| vec![]);
     let budget = get_budget();
