@@ -22,6 +22,7 @@ pub enum Category {
     Transportation,
     Entertainment,
     Internet,
+    UtilityBill,
     Other,
 }
 

@@ -23,6 +23,7 @@ pub fn map_category(category: &str) -> Category {
         "transportation" => Category::Transportation,
         "entertainment" => Category::Entertainment,
         "internet" => Category::Internet,
+        "utility" => Category::UtilityBill,
         _ => Category::Other,
     }
 }

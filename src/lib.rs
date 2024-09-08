@@ -91,6 +91,13 @@ enum Commands {
     },
 }
 
+/// The main entry point to the expense cli
+///
+/// # Argument
+/// This function does not take any arguments
+///
+/// # Returns
+/// ()
 pub fn main_expense_cli() {
     let args = ExpenseTracker::parse();
     let mut all_expenses = load_expenses().unwrap_or_else(|_| vec![]);
