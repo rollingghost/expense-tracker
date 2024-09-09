@@ -1,4 +1,5 @@
 use crate::expense_cli;
+use crate::surreal_db;
 
 use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
 use comfy_table::Table;
@@ -7,6 +8,7 @@ use rand::Rng;
 use std::fs::OpenOptions;
 use std::io::{self, stdin, stdout, Write};
 use std::time::SystemTime;
+use surreal_db::db::new_expense;
 
 /// Maps a category string to a `Category` enum variant.
 ///
@@ -319,5 +321,26 @@ pub fn clear_all_expenses() -> Result<(), Box<dyn std::error::Error>> {
             println!("\n\tMaybe that is not the command you wanted to run: Try [y] or [N]\n");
         }
     }
+    Ok(())
+}
+
+/// Transfers data from the expenses.json file into the database
+///
+/// # Arguments
+///
+/// * `all_expenses` - all expenses saved in the expenses.json file
+///
+/// # Returns
+///
+/// Result `Ok()` on success
+pub async fn migrate_expenses(
+    all_expenses: &Vec<Expense>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    for expense in all_expenses {
+        new_expense(expense).await?;
+    }
+
+    save_expenses(&[])?;
+
     Ok(())
 }

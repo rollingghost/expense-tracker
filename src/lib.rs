@@ -1,5 +1,6 @@
 pub mod expense_cli;
 pub mod surreal_db; // SurrealDB
+pub mod system; //Interacting with the system
 
 use clap::{Parser, Subcommand};
 use expense_cli::functions::*;
@@ -66,6 +67,9 @@ enum Commands {
 
         #[arg(long, default_value = "now")]
         added_at: String,
+
+        #[arg(short, long, default_value = "database")]
+        space: String,
     },
     #[command(about = "View summary of expenses.")]
     Summary {
@@ -88,6 +92,8 @@ enum Commands {
         #[arg(short, long)]
         budget: f64,
     },
+    #[command(about = "Migrate expenses to the surreal database")]
+    Migrate,
 }
 
 /// The main entry point to the expense cli
@@ -171,7 +177,19 @@ pub async fn main_expense_cli() {
             amount,
             category,
             added_at,
+            space,
         } => {
+            if space == "db" {
+                let db_expenses = surreal_db::db::select_all_expenses()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("There was a problem retrieving expense from the database.\n{e}");
+                        process::exit(0);
+                    });
+
+                println!("{:?}", db_expenses);
+            }
+
             let mut filtered_expenses = all_expenses.clone();
 
             filtered_expenses.retain(|expense| {
@@ -251,6 +269,14 @@ pub async fn main_expense_cli() {
                     "#
                 )
             }
+        }
+
+        Commands::Migrate => {
+            expense_cli::functions::migrate_expenses(&all_expenses)
+                .await
+                .unwrap_or_else(|e| {
+                    println!("An issue occurred while migrating your expenses\n{e}");
+                });
         }
     }
 }
