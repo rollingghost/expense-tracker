@@ -1,0 +1,14 @@
+#V2
+return $auth;
+define user ghost on root password 'surrealghost' roles owner;
+define function fn::greet($name: string) { return "Hello, " + $name + "!"}
+return fn::greet("Achira")
+return $auth;
+exit
+select * from expenses;
+return $auth;
+help
+select * from person;
+define 
+select * from expenses;
+SIGTERM

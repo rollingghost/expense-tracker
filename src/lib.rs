@@ -1,378 +1,286 @@
-pub mod pdb; // Postgres interactions
-pub mod surrealdb; // SurrealDB
+pub mod expense_cli;
+pub mod surreal_db; // SurrealDB
+pub mod system; //Interacting with the system
 
-use chrono::{DateTime, Datelike, NaiveDateTime, Utc};
-use comfy_table::Table;
-use rand::Rng;
-use serde::{Deserialize, Serialize};
-use std::fs::OpenOptions;
-use std::io::{self, stdin, stdout, Write};
-use std::time::SystemTime;
+use clap::{Parser, Subcommand};
+use expense_cli::functions::*;
+use expense_cli::structs_enums::Expense;
+use std::{process, time::SystemTime};
 
-/// Represents an expense in the expense tracker.
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct Expense {
-    pub id: String,
-    pub description: String,
-    pub amount: f64,
-    pub category: Category,
-    pub added_at: String,
-    pub updated_at: String,
+#[derive(Parser)]
+#[command(author, version, about, long_about=None)]
+struct ExpenseTracker {
+    #[command(subcommand)]
+    command: Commands,
 }
 
-/// Represents the category of an expense.
-#[derive(Serialize, Deserialize, Debug, PartialEq, Clone)]
-pub enum Category {
-    Food,
-    Transportation,
-    Entertainment,
-    Other,
+#[derive(Subcommand)]
+enum Commands {
+    #[command(about = "Add an expense.")]
+    Add {
+        #[arg(short, long)]
+        description: String,
+
+        #[arg(short, long)]
+        amount: f64,
+
+        #[arg(short, long, default_value = "other")]
+        category: String,
+    },
+    #[command(about = "Clear expenses from database.")]
+    Clear {
+        #[arg(short, long, default_value = "all")]
+        clear: String,
+    },
+    #[command(about = "Update an expense.")]
+    Update {
+        #[arg(short, long)]
+        id: String,
+
+        #[arg(short, long, default_value = "no_update")]
+        description: String,
+
+        #[arg(short, long, default_value = "-1.00")]
+        amount: f64,
+
+        #[arg(short, long, default_value = "no_update")]
+        category: String,
+    },
+    #[command(about = "Delete an expense.")]
+    Delete {
+        #[arg(short, long)]
+        id: String,
+    },
+    #[command(about = "View all expenses.")]
+    List {
+        #[arg(short, long, default_value = "all")]
+        id: String,
+
+        #[arg(short, long, default_value = "all")]
+        category: String,
+
+        #[arg(short, long, default_value = "0.00")]
+        amount: f64,
+
+        #[arg(short, long, default_value = "all")]
+        description: String,
+
+        #[arg(long, default_value = "now")]
+        added_at: String,
+
+        #[arg(short, long, default_value = "database")]
+        space: String,
+    },
+    #[command(about = "View summary of expenses.")]
+    Summary {
+        #[arg(short, long, default_value = "all")]
+        category: String,
+
+        #[arg(short, long, default_value = "0.00")]
+        amount: f64,
+
+        #[arg(short, long, default_value = "13")]
+        month: u32,
+    },
+    #[command(about = "Export expenses to a file.")]
+    Export {
+        #[arg(short, long)]
+        file: String,
+    },
+    #[command(about = "Control budget")]
+    Budget {
+        #[arg(short, long)]
+        budget: f64,
+    },
+    #[command(about = "Migrate expenses to the surreal database")]
+    Migrate,
+    #[command(about = "Get system summary")]
+    Sys,
 }
 
-impl Expense {
-    /// Creates a new expense with the given description, amount, and category.
-    pub fn new(description: String, amount: f64, category: Category) -> Self {
-        Self {
-            id: generate_random_id().to_string(),
+/// The main entry point to the expense cli
+///
+/// # Argument
+/// This function does not take any arguments
+///
+/// # Returns
+/// ()
+pub async fn main_expense_cli() {
+    let args = ExpenseTracker::parse();
+    let mut all_expenses = load_expenses().unwrap_or_else(|_| vec![]);
+    let budget = get_budget();
+
+    match args.command {
+        Commands::Add {
             description,
             amount,
             category,
-            added_at: convert_from_system_time(SystemTime::now()),
-            updated_at: convert_from_system_time(SystemTime::now()),
+        } => {
+            // Create a new task
+            let new_expense = Expense::new(description, amount, map_category(&category));
+            all_expenses.push(new_expense.clone());
+            save_expenses(&all_expenses).unwrap();
+            prettify_expense_display(&all_expenses);
         }
-    }
+        Commands::Update {
+            id,
+            description,
+            amount,
+            category,
+        } => {
+            let expense_index: usize = match search_expense_by_id(&all_expenses, id.as_str()) {
+                Some(index) => index,
+                None => {
+                    println!("No expense was found");
+                    process::exit(0);
+                }
+            };
 
-    /// Updates an expense in the expense tracker.
-    ///
-    /// # Arguments
-    ///
-    /// * `update_ready_expense` - The updated expense.
-    /// * `all_expenses` - The array of all expenses.
-    /// * `index` - The index of the expense to update.
-    ///
-    /// # Returns
-    ///
-    /// The updated expense.
-    pub fn update(
-        update_ready_expense: Expense,
-        all_expenses: &mut [Expense],
-        index: usize,
-    ) -> Self {
-        all_expenses[index] = update_ready_expense.clone();
-        save_expenses(all_expenses).unwrap();
+            if description != "no_update" {
+                all_expenses[expense_index].description = description.clone();
+            }
 
-        update_ready_expense
-    }
-}
+            // Update amount. Amount should be > 0.00
+            if amount <= 0.00 && amount != all_expenses[expense_index].amount && amount != -1.00 {
+                println!("Amount should be greater than 0.00");
+                process::exit(0);
+            } else if amount != -1.00 {
+                all_expenses[expense_index].amount = amount;
+            }
 
-/// Maps a category string to a `Category` enum variant.
-///
-/// # Arguments
-///
-/// * `category` - The category string to map.
-///
-/// # Returns
-///
-/// The corresponding `Category` enum variant.
-pub fn map_category(category: &str) -> Category {
-    match category {
-        "food" => Category::Food,
-        "transportation" => Category::Transportation,
-        "entertainment" => Category::Entertainment,
-        _ => Category::Other,
-    }
-}
+            // Update category
+            if category != "no_update" {
+                all_expenses[expense_index].category = map_category(&category);
+            }
 
-/// Converts a `SystemTime` to a `String` using the chrono library.
-///
-/// # Arguments
-///
-/// * `system_time` - The `SystemTime` to convert.
-///
-/// # Returns
-///
-/// The converted `String`.
-pub fn convert_from_system_time(system_time: SystemTime) -> String {
-    let datetime: DateTime<Utc> = system_time.into();
-    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
-}
+            // Update updated time
+            all_expenses[expense_index].updated_at = convert_from_system_time(SystemTime::now());
 
-/// Saves the expenses to a JSON file.
-///
-/// # Arguments
-///
-/// * `expenses` - The array of expenses to save.
-///
-/// # Returns
-///
-/// An `Ok` result if the expenses are successfully saved, or an `Err` containing a `Box<dyn std::error::Error>` otherwise.
-pub fn save_expenses(expenses: &[Expense]) -> Result<(), Box<dyn std::error::Error>> {
-    let file_path = "expenses.json";
-    let file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(file_path)?;
-
-    let mut writer = io::BufWriter::new(file);
-    serde_json::to_writer(&mut writer, expenses)?;
-    writer.write_all(b"\n")?;
-
-    writer.flush()?;
-
-    Ok(())
-}
-
-/// Exports the expenses to a CSV file.
-///
-/// # Arguments
-///
-/// * `file` - The path of the CSV file to export to.
-/// * `all_expenses` - The array of all expenses to export.
-///
-/// # Returns
-///
-/// An `Ok` result if the expenses are successfully exported, or an `Err` containing an `io::Error` otherwise.
-pub fn export_expenses(file: &str, all_expenses: &Vec<Expense>) -> Result<(), io::Error> {
-    let file_path = file;
-    let file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(file_path)?;
-
-    let mut _writer = io::BufWriter::new(file);
-
-    // Write the header
-    writeln!(
-        _writer,
-        "ID,Description,Amount,Category,Added At,Updated At"
-    )?;
-
-    for expense in all_expenses {
-        writeln!(
-            _writer,
-            "{},{},{},{:?},{},{}",
-            expense.id,
-            expense.description,
-            expense.amount,
-            expense.category,
-            expense.added_at,
-            expense.updated_at
-        )?;
-    }
-
-    _writer.flush()?;
-
-    Ok(())
-}
-
-/// Loads all expenses from the JSON file.
-///
-/// # Returns
-///
-/// An `Ok` result containing a vector of expenses if the expenses are successfully loaded, or an `Err` containing a `Box<dyn std::error::Error>` otherwise.
-pub fn load_expenses() -> Result<Vec<Expense>, Box<dyn std::error::Error>> {
-    let expense_file = "expenses.json";
-
-    // Load existing expense from expenses.json file or use empty array if file does
-    // not exist
-    let expenses = std::fs::read_to_string(expense_file).unwrap_or_else(|_| "[]".to_string());
-
-    let all_expenses: Vec<Expense> = serde_json::from_str(&expenses)?;
-
-    Ok(all_expenses)
-}
-
-/// Searches for an expense by its ID in the array of expenses.
-///
-/// # Arguments
-///
-/// * `expenses` - The array of expenses to search in.
-/// * `id` - The ID of the expense to search for.
-///
-/// # Returns
-///
-/// An `Option` containing the index of the expense if found, or `None` if not found.
-pub fn search_expense_by_id(expenses: &[Expense], id: &str) -> Option<usize> {
-    expenses.iter().position(|expense| expense.id == id)
-}
-
-/// Displays the expenses in a table
-///
-/// # Arguments
-///
-/// * `expenses` - The array of expenses to display
-///
-/// # Returns
-///
-/// A table of the expenses
-pub fn prettify_expense_display(expenses: &[Expense]) {
-    let mut table = Table::new();
-    let mut expense_number = 1;
-    table.set_header(vec![
-        "No",
-        "ID",
-        "Description",
-        "Amount",
-        "Category",
-        "Last Updated",
-    ]);
-    if !expenses.is_empty() {
-        for expense in expenses {
-            table.add_row(vec![
-                expense_number.to_string(),
-                expense.id.clone(),
-                expense.description.clone(),
-                expense.amount.to_string(),
-                format!("{:?}", expense.category),
-                expense.updated_at.clone(),
-            ]);
-            expense_number += 1;
+            save_expenses(&all_expenses).unwrap();
+            prettify_expense_display(&all_expenses);
         }
-    } else {
-        table.add_row(vec!["No expenses found"; 5]);
-    }
+        Commands::Delete { id } => {
+            let expense_index = match search_expense_by_id(&all_expenses, id.as_str()) {
+                Some(index) => index,
+                None => {
+                    prettify_expense_not_found();
+                    process::exit(0);
+                }
+            };
 
-    println!("{}", table);
-}
+            let deleted_expense = vec![delete_expense(expense_index, &mut all_expenses)];
+            save_expenses(&all_expenses).unwrap();
 
-/// Generates a random ID for an expense.
-///
-/// # Returns
-///
-/// A random ID.
-pub fn generate_random_id() -> u64 {
-    let mut range = rand::thread_rng();
-    range.gen_range(1000..9999)
-}
+            prettify_expense_display(&deleted_expense);
+        }
+        Commands::List {
+            id,
+            description,
+            amount,
+            category,
+            added_at,
+            space,
+        } => {
+            if space == "db" {
+                let db_expenses = surreal_db::db::select_all_expenses()
+                    .await
+                    .unwrap_or_else(|e| {
+                        println!("There was a problem retrieving expense from the database.\n{e}");
+                        process::exit(0);
+                    });
 
-/// Deletes an expense from the array of all expenses.
-///
-/// # Arguments
-///
-/// * `index` - The index of the expense to delete.
-/// * `all_expenses` - The array of all expenses.
-///
-/// # Returns
-///
-/// The deleted expense.
-pub fn delete_expense(index: usize, all_expenses: &mut Vec<Expense>) -> Expense {
-    all_expenses.remove(index)
-}
+                println!("{:?}", db_expenses);
+            }
 
-/// Displays a message when an expense is not found.
-///
-/// # Returns
-///
-/// A message indicating that no expenses were found.
-pub fn prettify_expense_not_found() {
-    let mut table = Table::new();
-    let no_expense_found = "No expenses found".to_string();
+            let mut filtered_expenses = all_expenses.clone();
 
-    table.set_header(vec![
-        "No",
-        "ID",
-        "Description",
-        "Amount",
-        "Category",
-        "Last Updated",
-    ]);
+            filtered_expenses.retain(|expense| {
+                (id == "all" || expense.id == id)
+                    && (description == "all" || expense.description == description)
+                    && (amount == 0.00 || expense.amount == amount)
+                    && (category == "all" || expense.category == map_category(&category))
+                    && (added_at == "now" || expense.added_at == added_at)
+            });
 
-    table.add_row(vec![
-        1.to_string(),
-        no_expense_found.clone(),
-        no_expense_found.clone(),
-        no_expense_found.clone(),
-        no_expense_found.clone(),
-        no_expense_found.clone(),
-    ]);
+            if filtered_expenses.is_empty() {
+                prettify_expense_not_found();
+            } else {
+                prettify_expense_display(&filtered_expenses);
+            }
+        }
+        Commands::Summary {
+            category,
+            amount,
+            month,
+        } => {
+            let mut filtered_expenses = all_expenses.clone();
 
-    println!("{}", table);
-}
+            filtered_expenses.retain(|expense| {
+                (category == "all" || expense.category == map_category(&category))
+                    && (amount == 0.00 || expense.amount == amount)
+                    && (month == 13 || get_month_from_date_string(&expense.added_at) == month)
+            });
 
-/// Get the month from a date string
-///
-/// # Arguments
-///
-/// * `datetime` - The date string to extract the month from
-///
-/// # Returns
-///
-/// The month as a u32
-pub fn get_month_from_date_string(datetime: &str) -> u32 {
-    let datetime = NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")
-        .expect("Unable to parse the date");
-    datetime.month()
-}
+            if !(1..=12).contains(&month) && month != 13 {
+                println!("Invalid month. Month should be between 1 and 12");
+                process::exit(0);
+            }
 
-/// Set the monthly budget
-///
-/// # Arguments
-///
-/// * `budget` - The budget to set
-///
-/// # Returns
-///
-/// The budget as a f64
-pub fn set_budget(budget: f64) {
-    let budget_file = "budget.json";
-    let file = OpenOptions::new()
-        .write(true)
-        .truncate(true)
-        .create(true)
-        .open(budget_file)
-        .expect("Unable to open the file");
+            // Get sum of all expenses in filtered expenses
+            let total: f64 = filtered_expenses.iter().map(|expense| expense.amount).sum();
 
-    let mut writer = io::BufWriter::new(file);
-    serde_json::to_writer(&mut writer, &budget).expect("Unable to write to the file");
+            if category != "all" {
+                println!(
+                    "\n\t\tTotal spent on {:?} stuff: {}\n\t\tBudget: {}\n\t\tDifference: {}\n",
+                    map_category(&category),
+                    total,
+                    budget,
+                    budget - total
+                );
+            } else if (1..=12).contains(&month) {
+                println!(
+                    "\n\t\tTotal spent on the month of {} stuff: {}\n\t\tBudget: {}\n\t\tDifference: {}\n",
+                    month, total, budget, budget - total
+                );
+            } else {
+                println!(
+                    "\n\t\tTotal spent on all stuff: {}\n\t\tBudget: {}\n\t\tDifference: {}\n",
+                    total,
+                    budget,
+                    budget - total
+                );
+            }
 
-    writer.flush().expect("Unable to flush the writer");
-}
-
-/// Get the monthly budget
-///
-/// # Returns
-///
-/// The budget as a f64
-pub fn get_budget() -> f64 {
-    let budget_file = "budget.json";
-    let budget = std::fs::read_to_string(budget_file).unwrap_or_else(|_| "0.00".to_string());
-
-    let budget: f64 = serde_json::from_str(&budget).expect("Unable to parse the budget");
-
-    budget
-}
-
-/// Clear all expense
-///
-/// # Arguments
-/// No arguments
-///
-/// # Returns
-///
-/// Result `Ok` if the expenses were successfully cleared and `Err` std::error::Error on error
-pub fn clear_all_expenses() -> Result<(), Box<dyn std::error::Error>> {
-    let mut confirm_clear = "n".to_string();
-    print!("\n >> << Are you sure you want to clear all expenses? [y][N] << >> ");
-    stdout()
-        .flush()
-        .expect("Hard to display something here. Try agin.");
-    stdin()
-        .read_line(&mut confirm_clear)
-        .expect("Could not read you terminal. Try again");
-
-    match confirm_clear.as_str() {
-        "y" | "Y" => {
-            let blank_expenses = [];
-            save_expenses(&blank_expenses)?;
+            prettify_expense_display(&filtered_expenses);
+        }
+        Commands::Export { file } => export_expenses(&file, &all_expenses).unwrap(),
+        Commands::Budget { budget } => set_budget(budget),
+        Commands::Clear { clear } => {
+            if clear == "all" {
+                match clear_all_expenses() {
+                    Ok(()) => println!("All clear."),
+                    Err(e) => println!("{}", e),
+                }
+            } else {
+                print!("Maybe that is no the argument you wanted.");
+                println!("Try this: ");
+                println!(
+                    r#"
+                        -c all: To clear all expenses
+                        -c <month>: To clear for certain month
+                    "#
+                )
+            }
         }
 
-        "n" | "N" => println!("User quit!"),
-
-        _ => {
-            println!("\n\tMaybe that is not the command you wanted to run: Try [y] or [N]\n");
+        Commands::Migrate => {
+            expense_cli::functions::migrate_expenses(&all_expenses)
+                .await
+                .unwrap_or_else(|e| {
+                    println!("An issue occurred while migrating your expenses\n{e}");
+                });
         }
+
+        Commands::Sys => system::sys::get_sys_summary(),
     }
-    Ok(())
 }

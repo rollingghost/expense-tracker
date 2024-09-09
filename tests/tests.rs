@@ -1,6 +1,7 @@
-use expense_tracker::{
-    convert_from_system_time, get_month_from_date_string, map_category, Category, Expense,
+use expense_tracker::expense_cli::functions::{
+    convert_from_system_time, get_month_from_date_string, map_category,
 };
+use expense_tracker::expense_cli::structs_enums::{Category, Expense};
 use std::time::SystemTime;
 
 #[cfg(test)]

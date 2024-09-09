@@ -8,7 +8,7 @@ assert_cmd = "2.0.16"
 chrono = "0.4.38"
 clap = { version = "4.5.17", features = ["derive"] }
 comfy-table = "7.1.1"
-postgres = "0.19.8"
+dotenv = "0.15.0"
 rand = "0.8.5"
 redis = "0.26.1"
 serde = { version = "1.0.210", features = ["derive"] }
