@@ -94,6 +94,8 @@ enum Commands {
     },
     #[command(about = "Migrate expenses to the surreal database")]
     Migrate,
+    #[command(about = "Get system summary")]
+    Sys,
 }
 
 /// The main entry point to the expense cli
@@ -278,5 +280,7 @@ pub async fn main_expense_cli() {
                     println!("An issue occurred while migrating your expenses\n{e}");
                 });
         }
+
+        Commands::Sys => system::sys::get_sys_summary(),
     }
 }
